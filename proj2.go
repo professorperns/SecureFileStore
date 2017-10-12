@@ -124,6 +124,26 @@ type User struct {
 	// be public (start with a capital letter)
 }
 
+// The structure definition for a header file
+type Header struct {
+	Filename string
+	MerkleRoot string
+	EncryptKey []byte
+	HMACKey []byte
+	PrevRoot []byte
+}
+
+//The structure definition for a merkle root file
+type MerkleRoot struct {
+	Root []byte
+	DataBlocks []string
+}
+
+//The structure definiiton for a data block file
+type DataBlock struct {
+	Bytes []byte
+}
+
 
 
 // This creates a user.  It will only be called once for a user
@@ -150,14 +170,11 @@ func InitUser(username string, password string) (userdataptr *User, err error){
 		panic(err)
 	}
 	keys := userlib.PBKDF2Key(password, username, userlib.HashSize + userlib.AESKeySize)
-	hmac_key := keys[0:userlib.HashSize]
-	encrypt_key := keys[userlib.HashSize:]
+	hmac_key, encrypt_key := keys[0:userlib.HashSize], keys[userlib.HashSize:]
 	userdata = User{username, password, privkey}
 	encrypted_data := EncryptData(encrypt_key, json.Marshal(userdata))
 	hmac := GenerateHMAC(hmac_key, encrypted_data)
-	packed_data := encrypted_data || hmac
-	
-	secure_filename := GenerateHMAC(hmac_key, username || password)
+	packed_data, secure_filename := encrypted_data || hmac, GenerateHMAC(hmac_key, username || password)
 	userlib.DatastoreSet(secure_filename, packed_data)
 	userlib.KeystoreSet(username, privkey.PublicKey)
 	return &userdata, err
@@ -198,7 +215,22 @@ func GetUser(username string, password string) (userdataptr *User, err error){
 // This stores a file in the datastore.
 //
 // The name of the file should NOT be revealed to the datastore!
+
+//TODO: ensure that the the 
 func (userdata *User) StoreFile(filename string, data []byte) {
+	file_encrypt_key, file_hmac_key := randomBytes(userlib.AESKeySize), randomBytes(userlib.BlockSize)
+	datablock := EncryptData(file_encrypt_key, json.Marshal(DataBlock{data}))
+	datablock_name, datablock_hmac := GenerateHMAC(hmac_key, randomBytes(32)), GenerateHMAC(file_hmac_key, datablock)
+	//Fix the array literals
+	root, blocks := ComputeMerkleRoot([datablock]), [datablock_name]
+	merkleroot := EncryptData(file_encrypt_key, json,Marshal(MerkleRoot{root, blocks}))
+	merkleroot_name, merkleroot_hmac := GenerateHMAC(hmac_key, randomBytes(32)), GenerateHMAC(file_hmac_key, merkleroot)
+	header := EncryptData(User.encrypt_key, json.Marshal(Header{filename, merkleroot_name, file_encrypt_key, file_hmac_key, root}))
+	header_name := GenerateHMAC(User.hmac_key, User.username || User.password || User.filename) 
+	header_hmac := GenerateHMAC(User.hmac_key, header)
+	userlib.DatastoreSet(header_name, header || header_hmac)
+	userlib.DatastoreSet(merkleroot_name, merkleroot || merkleroot_hmac)
+	userlib.DatastoreSet(datablock_name, datablock || datablock_hmac)
 }
 
 
@@ -288,8 +320,6 @@ func DecryptData(key byte[], ciphertext byte[]) (byte[]) {
 	if err != nil {
 		panic(err)
 	}
-	// The IV needs to be unique, but not secure. Therefore it's common to
-	// include it at the beginning of the ciphertext.
 	if len(ciphertext) < userlib.BlockSize {
 		//TODO: Handle this error appropriately
 		panic("ciphertext too short")
