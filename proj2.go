@@ -309,3 +309,27 @@ func GenerateHMAC(key byte[], data byte[]) (byte[]) {
 	return mac_data
 }
 
+func ComputeMerkleRoot(byte[][] leaves) (byte[]) {
+	for len(leaves) > 1 {
+		hashes := make(byte[][])
+		iter_count := len(leaves) / 2 + len(leaves) % 2
+		for (iter_count > 0) {
+			if len(leaves) == 1 {
+				first, leaves := leaves[0], leaves[1:]
+				hash := userlib.NewSHA256()
+				hash.write(first)
+				hash.Sum(nil)
+				append(hashes, hash)
+			} else {
+				first, second, leaves := leaves[0], leaves[1], leaves[2:]
+				hash := userlib.NewSHA256()
+				hash.write(first || second)
+				hash.Sum(nil)
+				append(hashes, hash)
+			}
+		}
+		leaves = hashes
+	}
+	return leaves[0]
+}
+
