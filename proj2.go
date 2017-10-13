@@ -4,7 +4,6 @@ package proj2
 // You MUST NOT change what you import.  If you add ANY additional
 // imports it will break the autograder, and we will be Very Upset.
 
-//TODO: See if we need to marshall the data.
 
 import (
 
@@ -174,10 +173,10 @@ func InitUser(username string, password string) (userdataptr *User, err error){
 	keys := userlib.PBKDF2Key(password, username, userlib.HashSize + userlib.AESKeySize)
 	hmac_key, encrypt_key := keys[0:userlib.HashSize], keys[userlib.HashSize:]
 	userdata = User{username, password, privkey, hmac_key, encrypt_key}
-	encrypted_data := EncryptData(encrypt_key, json.Marshal(userdata))
-	hmac := GenerateHMAC(hmac_key, encrypted_data)
-	packed_data, secure_filename := encrypted_data || hmac, GenerateHMAC(hmac_key, username || password)
-	userlib.DatastoreSet(secure_filename, packed_data)
+	append(username, password...)
+	if err := EncryptAndStore(username, hmac_key, encrypt_key, &userdata); err != nil {
+		panic("Data was not able to be stored")
+	}
 	userlib.KeystoreSet(username, privkey.PublicKey)
 	return &userdata, err
 }
@@ -188,26 +187,15 @@ func InitUser(username string, password string) (userdataptr *User, err error){
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
 
-//TODO: Return an appropriate error message. Implement specificity of checks
+//TODO: Return an appropriate error message. Implement specificity of checks Fix || usage
 func GetUser(username string, password string) (userdataptr *User, err error){
 	var userdata User
 	keys := userlib.PBKDF2Key(password, username, userlib.HashSize + userlib.AESKeySize)
 	hmac_key, encrypt_key := keys[0:userlib.HashSize], keys[userlib.HashSize:]
 	secure_filename := HMAC(hmac_key || username || password)
-	packed_data, err := userlib.DatastoreGet(secure_filename)
-	if (err) {
-		panic("User data not found")
+	if err := VerifyAndDecrypt(secure_filename, hmac_key, encrypt_key, &userdata); err != nil {
+		panic("Unable to load user struct file")
 	}
-	if len(packed_data < userlib.BlockSize) {
-		panic("HMAC is invalid")
-	}
-	hmac := packed_data[len(packed_data) - userlib.BlockSize:]
-	ciphertext := packed_data[0:len(packed_data) - userlib.BlockSize]
-	if !VerifyHMAC(hmac_key, ciphertext, hmac) {
-		panic("HMAC does not correspond to encrypted data")
-	}
-	plaintext = DecryptData(encrypt_key, ciphertext)
-	userdata = json.Unmarshal(plaintext)
 	return &userdata, err
 }
 
@@ -217,21 +205,23 @@ func GetUser(username string, password string) (userdataptr *User, err error){
 //
 // The name of the file should NOT be revealed to the datastore!
 
-//TODO: ensure that the the user struct is loaded
 func (userdata *User) StoreFile(filename string, data []byte) {
 	file_encrypt_key, file_hmac_key := randomBytes(userlib.AESKeySize), randomBytes(userlib.BlockSize)
-	datablock := EncryptData(file_encrypt_key, json.Marshal(DataBlock{data}))
-	datablock_name, datablock_hmac := GenerateHMAC(hmac_key, randomBytes(32)), GenerateHMAC(file_hmac_key, datablock)
-	//Fix the array literals
-	root, blocks := ComputeMerkleRoot([datablock]), [datablock_name]
-	merkleroot := EncryptData(file_encrypt_key, json,Marshal(MerkleRoot{root, blocks}))
-	merkleroot_name, merkleroot_hmac := GenerateHMAC(hmac_key, randomBytes(32)), GenerateHMAC(file_hmac_key, merkleroot)
-	header := EncryptData(User.EncryptKey, json.Marshal(Header{filename, merkleroot_name, file_encrypt_key, file_hmac_key, root}))
-	header_name := GenerateHMAC(User.HMACKey, User.Username || User.Password || filename) 
-	header_hmac := GenerateHMAC(User.HMACKey, header)
-	userlib.DatastoreSet(header_name, header || header_hmac)
-	userlib.DatastoreSet(merkleroot_name, merkleroot || merkleroot_hmac)
-	userlib.DatastoreSet(datablock_name, datablock || datablock_hmac)
+	datablock_name, datablock := GenerateHMAC(hmac_key, randomBytes(32)), DataBlock{data}
+	if err := EncryptAndStore(datablock_name, file_hmac_key, file_encrypt_key, &datablock); err != nil {
+		panic("Data block was not stored")
+	}
+	blocks := [1]DataBlock{datablock}
+	root := ComputeMerkleRoot(blocks)
+	merkleroot_name, merkleroot := GenerateHMAC(file_hmac_key, randomBytes(32)),  MerkleRoot{root, blocks}
+	if err := EncryptAndStore(merkleroot_name, file_hmac_key, file_encrypt_key, &merkleroot); err != nil {
+		panic("Merkle root was not stored. Datablock deleted")
+	}
+	header := Header{filename, merkleroot_name, file_encrypt_key, file_hmac_key, root}
+	header_name := GenerateHMAC(userdata.HMACKey, userdata.Username || userdata.Password || filename) 
+	if err := EncryptAndStore(header_name, userdata.HMACKey, userdata.EncryptKey, &header); err != nil {
+		panic("Header was not stored")
+	}
 }
 
 
@@ -241,9 +231,22 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // existing file, but only whatever additional information and
 // metadata you need.
 
-//TODO: ensure that the user struct is loaded
 func (userdata *User) AppendFile(filename string, data []byte) (err error){
-	
+	//Load file is a helper that returns byte blocks
+	//TODO: check if data is intact
+	var header Header; var merkleroot MerkleRoot
+	header_name := GenerateHMAC(userdata.HMACKey, userdata.Username || userdata.Password || filename) 
+	if err := VerifyAndDecrypt(header_name, userdata.HMACKey, userdata.EncryptKey, &header); err != nil {
+		panic("Unable to load Header file")
+	}
+	data_blocks, merkle_root, err := LoadDataBlocks(filename, userdata)
+	if err != nil {
+		panic("Datablocks unable to be loaded")
+	}
+	append(data_blocks, data)
+	ComputeMerkleRoot(data_blocks)
+
+	//TODO: add data to the files modularize EncrypteAndStore
 	return
 }
 
@@ -251,64 +254,20 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error){
 //
 // It should give an error if the file is corrupted in any way.
 
-//TODO: ensure that the user struct is loaded
+//TODO: what is the format of the output data
 func (userdata *User) LoadFile(filename string)(data []byte, err error) {
-	header_name := GenerateHMAC(User.HMACKey, User.Username || User.Password || filename) 
-	ciphertext, err := userlib.DatastoreGet(header_name)
-	if err != nil {
-		panic("Error retrieving the file")
-	}
-	encrypted_header, header_hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
-	if !VerifyHMAC(User.HMACKey, encrypted_header, header_hmac) {
-		panic("Encrypted text does not match HMAC")
-	}
-	plaintext := DecryptData(User.EncryptKey, encrypted_header)
-	var header Header 
-	err := json.Unmarshal(plaintext, &header)
-	if err != nil {
-		panic("Unable to load decrypted cyphertex")
-	}
-	ciphertext, err := userlib.DatastoreGet(header.MerkleRoot)
-	if err != nil {
-		panic("Unable to load Merkle Root file")
-	}
-	encrypted_merkle, merkle_hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
-	if !VerifyHMAC(Header.HMACKey, encrypted_merkle, merkle_hmac) {
-		panic("Encrypted merkle does not match HMAC")
-	}
-	plaintext := DecryptData(Header.EncryptKey, encrypted_merkle)
-	var merkle MerkleRoot
-	err := json.Unmarshal(plaintext,&merkle)
-	if err != nil {
-		panic("Unable to load decrypted ciphertext")
-	}
-	data_blocks := make(byte[][])
-	for _, v := range merkle.DataBlocks {
-		ciphertext, err := userlib.DatastoreGet(v)
-		if err != nil {
-			panic("Unable to load Merkle Root file")
-		}
-		encrypted_data, data_hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
-		if !VerifyHMAC(Header.HMACKey, encrypted_data, data_hmac) {
-			panic("Encrypted merkle does not match HMAC")
-		}
-		plaintext := DecryptData(Header.EncryptKey, encrypted_data)
-		var block DataBlock
-		err := json.Unmarshal(plaintext,&merkle)
-		if err != nil {
-			panic("Unable to load decrypted ciphertext")
-		}
-		append(data_blocks, plaintext)
-	}
-	new_root := ComputeMerkleRoot(data_blocks)
-	if Header.PrevRoot != new_root {
-		panic("Merkle roots are incorrrect; changes were made to the file")
-	}
 	var data []byte
-	for _, v := range data_blocks {
-		data = data || v
+	data_blocks, merkle_root, err := LoadDataBlocks(filename, userdata)
+	if err != nil {
+		panic("Data was unable to be loaded in helper")
 	}
- 	return data, err
+	if err := VerifyMerkleRoot(data, merkle_root); err == false {
+		panic("Merkle roots do not match")
+	}
+	for _, v := data_blocks {
+		append(data, v)
+	}
+ 	return data, err 
 }
 
 // You may want to define what you actually want to pass as a
@@ -399,27 +358,85 @@ func GenerateHMAC(key byte[], data byte[]) (byte[]) {
 	return mac_data
 }
 
+//Helper function computes the merkle root of a set of leaves in a merkle tree
 func ComputeMerkleRoot(byte[][] leaves) (byte[]) {
 	for len(leaves) > 1 {
-		hashes := make(byte[][])
-		iter_count := len(leaves) / 2 + len(leaves) % 2
+		hashes, iter_count := make(byte[][]), len(leaves) / 2 + len(leaves) % 2
 		for (iter_count > 0) {
 			if len(leaves) == 1 {
-				first, leaves := leaves[0], leaves[1:]
-				hash := userlib.NewSHA256()
-				hash.write(first)
-				hash.Sum(nil)
-				append(hashes, hash)
+				first, second, leaves := leaves[0], nil, leaves[1:]
 			} else {
 				first, second, leaves := leaves[0], leaves[1], leaves[2:]
-				hash := userlib.NewSHA256()
-				hash.write(first || second)
-				hash.Sum(nil)
-				append(hashes, hash)
 			}
+			hash := userlib.NewSHA256()
+			hash.write(first)
+			hash.Sum(nil)
+			append(hashes, hash)
 		}
 		leaves = hashes
 	}
 	return leaves[0]
 }
+
+//Helper function that marshals, encrypts, and stores file on the datastore
+func EncryptAndStore(filename []byte, hmac_key []byte, encrypt_key []byte, v interface{}) (err error) {
+	bytes, err := json.Marshal(v)
+	if err != nil {
+		panic("Data was not able to be marshalled")
+	}
+	encrypted_data := EncryptData(encrypt_key, bytes)
+	hmac := GenerateHMAC(hmac_key, encrypted_data)
+	append(encrypted_data, hmac...)
+	userlib.DatastoreSet(filename, encrypted_data)
+	return err
+}
+
+//Helper function that retrieves, verifies, decrypts, and unmarshals the stored file
+func VerifyAndDecrypt(filename []byte, hmac_key []byte, encrypt_key []byte, v interface{}) (err error) {
+	ciphertext, err := userlib.DatastoreGet(filename)
+	if err != nil {
+		panic("Error retrieving the file")
+	}
+	encrypted_data, hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
+	if !VerifyHMAC(hmac_key, encrypted_data, hmac) {
+		panic("Encrypted text does not match HMAC")
+	}
+	plaintext := DecryptData(encrypt_key, encrypted_data)
+	err := json.Unmarshal(plaintext, v)
+	if err != nil {
+		panic("Unable to load decrypted ciphertext")
+	}
+	return err
+}
+
+// helper function that loads all blocks of data from a file
+func LoadDataBlocks(filename string, userdata *User) ([][]byte, []byte, err error) {
+	var header Header; var merkle_root MerkleRoot; var block DataBlock
+	secure_filename := GenerateHMAC(userdata.HMACKey, userdata.Username || userdata.Password || filename) 
+	
+	if err := VerifyAndDecrypt(secure_filename, userdata.HMACKey, userdata.EncryptKey, &header); err != nil {
+		panic("Unable to load Header file")
+	}
+	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkle_root); err != nil {
+		panic("Unable to load Merkle Root file")
+	}
+	data_blocks := make(byte[][])
+	for _, v := range merkle.DataBlocks {
+		if 	err := VerifyAndDecrypt(v, header.HMACKey, header.EncryptKey, &block); err != nil {
+			panic("Unable to load Merkle Root file")
+		}
+		append(data_blocks, block.Bytes)
+	}
+	return data_blocks, header.MerkleRoot, err
+}
+
+func VerifyMerkleRoot(blocks [][]byte, prev []byte) (bool) {
+	new_root := ComputeMerkleRoot(data_blocks)
+	if prevRoot != new_root {
+		panic("Merkle roots are incorrrect; changes were made to the file")
+		return false
+	}
+	return true
+}
+
 
