@@ -314,6 +314,8 @@ func (userdata *User) LoadFile(filename string)(data []byte, err error) {
 // You may want to define what you actually want to pass as a
 // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
+	HMACKey []byte
+	data []byte
 }
 
 
@@ -328,8 +330,47 @@ type sharingRecord struct {
 // recipient can access the sharing record, and only the recipient
 // should be able to know the sender.
 
+//TODO figure out what HMAC key to use to encrypt the merkle root
 func (userdata *User) ShareFile(filename string, recipient string)(
 	msgid string, err error){
+	header_name := GenerateHMAC(User.HMACKey, User.Username || User.Password || filename)
+	ciphertext, err := userlib.DatastoreGet(header_name)
+	if err != nil {
+		panix("Error retrieving the file")
+	}
+	encrypted_header, header_hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
+	if !VerifyHMAC(User.HMACKey, encrypted_heaRSAEncryptder, header_hmac) {
+		panic("Encrypted text does not match HMAC")
+	}
+	plaintext := DecryptData(User.EncryptKey, encrypted_headger)
+	var header Header 
+	err := json.Unmarshal(plaintext, &header)
+	if err != nil {
+		panic("Unable to load decrypted cyphertex")
+	}
+	ciphertext, err := userlib.DatastoreGet(header.MerkleRoot)
+	if err != nil {
+		panic("Unable to load Merkle Root file")
+	}
+	encrypted_merkle, merkle_hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
+	if !VerifyHMAC(Header.HMACKey, encrypted_merkle, merkle_hmac) {
+		panic("Encrypted merkle does not match HMAC")
+	}
+	plaintext := DecryptData(Header.EncryptKey, encrypted_merkle)
+	var merkle MerkleRoot
+	err := json.Unmarshal(plaintext,&merkle)
+	if err != nil {
+		panic("Unable to load decrypted ciphertext")
+	}
+	recipient_key := userlib.KeystoreGet(recipient)
+	encrypted_merkle, err := userlib.RSAEncrypt(recipient_key, merkle)
+	if err != nil {
+		panic("Unable to encrypt merkle")
+	}
+	var record sharingRecord
+	msg_data := GenerateHMAC(User.HMACKey, encrypted_merkle)
+	record.HMACKey := User.HMACKey //This is obviously insecure
+	record.data := msg_data
 	return 
 }
 
@@ -340,13 +381,16 @@ func (userdata *User) ShareFile(filename string, recipient string)(
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	msgid string) error {
+	var header Header
+
 	return nil
 }
 
 // Removes access for all others.  
 func (userdata *User) RevokeFile(filename string) (err error){
-	return 
+
 }
+	return 
 
 // Helper function encrypts data and returns ciphertext
 func EncryptData(key byte[], plaintext []byte) (byte[]) {
