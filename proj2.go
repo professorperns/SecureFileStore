@@ -294,16 +294,16 @@ type sharingRecord struct {
 //TODO figure out what HMAC key to use to encrypt the merkle root
 func (userdata *User) ShareFile(filename string, recipient string)(
 	msgid string, err error){
-	header_name := GenerateHMAC(User.HMACKey, User.Username || User.Password || filename)
+	header_name := GenerateHMAC(userdata.HMACKey, userdata.userdataname || userdata.Password || filename)
 	ciphertext, err := userlib.DatastoreGet(header_name)
 	if err != nil {
 		panix("Error retrieving the file")
 	}
 	encrypted_header, header_hmac := ciphertext[:len(ciphertext) - userlib.BlockSize], ciphertext[len(ciphertext) - userlib.BlockSize:]
-	if !VerifyHMAC(User.HMACKey, encrypted_header, header_hmac) {
+	if !VerifyHMAC(userdata.HMACKey, encrypted_header, header_hmac) {
 		panic("Encrypted text does not match HMAC")
 	}
-	plaintext := DecryptData(User.EncryptKey, encrypted_header)
+	plaintext := DecryptData(userdata.EncryptKey, encrypted_header)
 	var header Header 
 	err := json.Unmarshal(plaintext, &header)
 	if err != nil {
@@ -370,23 +370,23 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	if err != nil {
 		panic("Unable to load ciphertext")
 	}
-	header.MerkleRoot, err := userlib.RSADecrypt(User.RSAPrivKey, share.MerkleRoot, [])
+	header.MerkleRoot, err := userlib.RSADecrypt(userdata.RSAPrivKey, share.MerkleRoot, [])
 	if err != nil {
 		panic("Unable to decrypt MerkleRoot")
 	}
-	header.HMACKey, err := userlib.RSADecrypt(User.RSAPrivKey, share.HMACKey, [])
+	header.HMACKey, err := userlib.RSADecrypt(userdata.RSAPrivKey, share.HMACKey, [])
 	if err != nil {
 		panic("Unable to decrypt HMACKey")
 	}
-	header.PrevRoot, err := userlib.RSADecrypt(User.RSAPrivKey, share.PrevRoot, [])
+	header.PrevRoot, err := userlib.RSADecrypt(userdata.RSAPrivKey, share.PrevRoot, [])
 	if err != nil {
 		panic("Unable to decrypt PrevRoot")
 	}
-	header.EncryptKey, err := userlib.RSADecrypt(User.RSAPrivKey, share.EncryptKey, [])
+	header.EncryptKey, err := userlib.RSADecrypt(userdata.RSAPrivKey, share.EncryptKey, [])
 	if err != nil {
 		panic("Unable to decrypt EncryptKey")
 	}
-	err := EncryptAndStore(filename, User.HMACKey, User.EncryptKey, &header)
+	err := EncryptAndStore(filename, userdata.HMACKey, userdata.EncryptKey, &header)
 	return err
 }
 
