@@ -357,6 +357,8 @@ func (userdata *User) ShareFile(filename string, recipient string)(
 // The recipient should not be able to discover the sender's view on
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
+
+//still needs to use a verify HMAC
 func (userdata *User) ReceiveFile(filename string, sender string,
 	msgid string) error {
 	var header Header
@@ -383,7 +385,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 		panic("Unable to decrypt PrevRoot")
 	}
 	header.EncryptKey, err := userlib.RSADecrypt(userdata.RSAPrivKey, share.EncryptKey, [])
-	if err != nil {
+	if err != nil {bbb
 		panic("Unable to decrypt EncryptKey")
 	}
 	err := EncryptAndStore(filename, userdata.HMACKey, userdata.EncryptKey, &header)
@@ -392,18 +394,29 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes access for all others.  
 func (userdata *User) RevokeFile(filename string) (err error){
-	data_blocks, merkle_root, err := LoadDataBlocks(filename, userdata)
+	data_blocks, merkle_root, header, err := LoadDataBlocks(filename, userdata)
+	copy_data_blocks := data_blocks
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
 	}
-	if err := VerifyMerkleRoot(data, merkle_root); err == false {
+	if err := VerifyMerkleRoot(data_blocks, merkle_root); err == false {
 		panic("Merkle roots do not match")
 	}
 	for _, v := data_blocks {
 		delete(v)
 	}
 	delete(merkle_root)
-	return 
+	delete(header)
+	userdata.StoreFile(filename, copy_data_blocks[0])
+	var err_return error
+	for i := 1, i < len(copy_data_blocks), i++ {
+		err := userdata.AppendFile(filename, copy_data_blocks[1])
+		if err != nil {
+			panic(err)
+			err_return := err
+		}
+	}
+	return err_return
 }
 
 // Helper function encrypts data and returns ciphertext
@@ -529,6 +542,25 @@ func LoadDataBlocks(filename string, userdata *User) ([][]byte, []byte, err erro
 	return data_blocks, header.MerkleRoot, err
 }
 
+func LoadDataBlocksHeader(filename string, userdata *User) ([][]byte, []byte, err error) {
+	var header Header; var merkle_root MerkleRoot; var block DataBlock
+	secure_filename := GenerateHMAC(userdata.HMACKey, userdata.Username || userdata.Password || filename) 
+	
+	if err := VerifyAndDecrypt(secure_filename, userdata.HMACKey, userdata.EncryptKey, &header); err != nil {
+		panic("Unable to load Header file")
+	}
+	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkle_root); err != nil {
+		panic("Unable to load Merkle Root file")
+	}
+	data_blocks := make(byte[][])
+	for _, v := range merkle.DataBlocks {
+		if 	err := VerifyAndDecrypt(v, header.HMACKey, header.EncryptKey, &block); err != nil {
+			panic("Unable to load Merkle Root file")
+		}
+		append(data_blocks, block.Bytes)
+	}
+	return data_blocks, header.MerkleRoot,, header, err
+}
 func VerifyMerkleRoot(blocks [][]byte, prev []byte) (bool) {
 	new_root := ComputeMerkleRoot(data_blocks)
 	if prevRoot != new_root {
