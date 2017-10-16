@@ -20,7 +20,7 @@ func TestInit(t *testing.T) {
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		// t.Error says the test fails
-		t.Error("Failed to initialize user", err)
+		t.Error("Failed to initialize user", err.Error())
 	}
 	// t.Log() only produces output if you run with "go test -v"
 	t.Log("Got user", u)
@@ -102,5 +102,39 @@ func TestAppendPerfomance(t *testing.T) {
 }
 
 func TestShareFile(t *testing.T) {
+	DebugPrint = true
+	bob, err := InitUser("bob", "barfu")
+	alice, _ := GetUser("alice", "fubar")
+	alice.StoreFile("toshare", []byte(""))
+	msgid, err := alice.ShareFile("toshare", "bob")
+	if err != nil {
+		debugMsg("sharing failed")
+	}
+}
 
+func TestReceiveFile(t *testing.T) {
+	DebugPrint = true
+	bob, err := InitUser("bob", "barfu")
+	alice, _ := GetUser("alice", "fubar")
+	alice.StoreFile("toshare", []byte("hello"))
+	msgid, err := alice.ShareFile("toshare", "bob")
+	err = bob.ReceiveFile("sharecare", "alice", msgid)
+	if err != nil {
+		debugMsg(err)
+	}
+	file, err := bob.LoadFile("sharecare")
+	debugMsg("file is: %s", file)
+}
+
+func TestRevokeFile(t *testing.T) {
+	DebugPrint = true
+	bob, err := InitUser("bob", "barfu")
+	alice, _ := GetUser("alice", "fubar")
+	alice.StoreFile("toshare", []byte("hello"))
+	msgid, err := alice.ShareFile("toshare", "bob")
+	err = alice.RevokeFile("toshare")
+	err = bob.ReceiveFile("toshare", "alice", msgid)
+	debugMsg(err.Error())
+	file, err := alice.LoadFile("toshare")
+	debugMsg("File is : %s", file)
 }

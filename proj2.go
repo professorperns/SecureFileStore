@@ -346,8 +346,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	record.EncryptKey = rsaencrypted_filekey
 	record.HMACKey = rsaencrypted_filehmac
 	record.MerkleRoot = rsaencrypted_merkle
-	record.PrevRoot = rsaencrypted_merkle
-	RSARecord, err := userlib.RSASign(userdata.RSAPrivKey, record.EncryptKey || record.HMACKey || record.MerkleRoot || record.PrevRoot)
+	record.PrevRoot = rsaencrypted_prev
+	enc, hmac, merk, prev := bytesToUUID(rsaencrypted_filekey), bytesToUUID(rsaencrypted_filehmac), bytesToUUID(rsaencrypted_merkle), bytesToUUID(rsaencrypted_prev)
+	rsastring := []byte(enc.String() + hmac.String() + merk.String() + prev.String())
+	RSARecord, err := userlib.RSASign(userdata.RSAPrivKey, rsastring)
 	if err != nil {
 		panic("Unable to sign record")
 	}
@@ -355,7 +357,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	msgbytes := randomBytes(16)
 	msgiduuid := bytesToUUID(msgbytes)
 	msgid = msgiduuid.String()
-	userlib.DatastoreSet(msgid, record)
+	byteString := []byte(enc.String() + hmac.String() + merk.String() + prev.String() + bytesToUUID(record.RSASign).String())
+	userlib.DatastoreSet(msgid, byteString)
 	return msgid, err
 }
 
@@ -378,8 +381,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	if err1 != nil {
 		panic("Unable to load ciphertext")
 	}
-	PublicKey, ok := userlib.KeystoreGet(sender)
-	err1 = userlib.RSAVerify(&PublicKey, share.EncryptKey || share.HMACKey || share.MerkleRoot || share.PrevRoot, share.RSASign)
+	PublicKey, _ := userlib.KeystoreGet(sender)
+	enc, hmac, merk, prev := bytesToUUID(share.EncryptKey), bytesToUUID(share.HMACKey), bytesToUUID(share.MerkleRoot), bytesToUUID(share.PrevRoot)
+	rsastring := []byte(enc.String() + hmac.String() + merk.String() + prev.String())
+	err1 = userlib.RSAVerify(&PublicKey, rsastring, share.RSASign)
 	if err1 != nil {
 		panic("RSA signature not verified")
 	}
@@ -410,24 +415,20 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
 	}
-	if err := VerifyMerkleRoot(data_blocks, header.PrevRoot); err == false {
+	if err := VerifyMerkleRoot(data_blocks, header.MerkleRoot); err == false {
 		panic("Merkle roots do not match")
 	}
-	for _, v := range data_blocks {
-		delete(v)
-	}
-	delete(merkle_root)
-	delete(header)
+	data_blocks = nil
+	header = Header{}
 	userdata.StoreFile(filename, copy_data_blocks[0])
-	var err_return error
-	for i := range len(copy_data_blocks) {
-		err := userdata.AppendFile(filename, copy_data_blocks[1])
+	i := 1
+	for i < len(copy_data_blocks) {
+		err := userdata.AppendFile(filename, copy_data_blocks[i])
 		if err != nil {
 			panic(err)
-			err_return := err
 		}
 	}
-	return err_return
+	return err
 }
 
 // Helper function encrypts data and returns ciphertext
