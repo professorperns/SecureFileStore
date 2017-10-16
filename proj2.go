@@ -294,14 +294,11 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // You may want to define what you actually want to pass as a
 // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
-<<<<<<< HEAD
-=======
 	MerkleRoot string
 	EncryptKey []byte
 	HMACKey []byte
 	PrevRoot []byte
 	RSASign []byte
->>>>>>> f6b4cb67139a86dd735e08be148896f132a63a39
 }
 
 
@@ -318,9 +315,6 @@ type sharingRecord struct {
 
 func (userdata *User) ShareFile(filename string, recipient string)(
 	msgid string, err error){
-<<<<<<< HEAD
-	return 
-=======
 	header_name := GenerateHMAC(userdata.HMACKey, userdata.userdataname || userdata.Password || filename)
 	ciphertext, err := userlib.DatastoreGet(header_name)
 	if err != nil {
@@ -381,7 +375,6 @@ func (userdata *User) ShareFile(filename string, recipient string)(
 	msgid := bytesToUUID(msgbytes)
 	err := userlib.DatastoreSet(msgid.String(), record)
 	return msgid.String(), err
->>>>>>> f6b4cb67139a86dd735e08be148896f132a63a39
 }
 
 
@@ -393,9 +386,6 @@ func (userdata *User) ShareFile(filename string, recipient string)(
 //still needs to use a verify HMAC
 func (userdata *User) ReceiveFile(filename string, sender string,
 	msgid string) error {
-<<<<<<< HEAD
-	return nil
-=======
 	var header Header
 	ciphertext, err := userlib.DatastoreGet(msgid)
 	if err != nil {
@@ -429,14 +419,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	}
 	err := EncryptAndStore(filename, userdata.HMACKey, userdata.EncryptKey, &header)
 	return err
->>>>>>> f6b4cb67139a86dd735e08be148896f132a63a39
 }
 
 // Removes access for all others.  
 func (userdata *User) RevokeFile(filename string) (err error){
-<<<<<<< HEAD
-	return 
-=======
 	data_blocks, merkle_root, header, err := LoadDataBlocks(filename, userdata)
 	copy_data_blocks := data_blocks
 	if err != nil {
@@ -460,7 +446,6 @@ func (userdata *User) RevokeFile(filename string) (err error){
 		}
 	}
 	return err_return
->>>>>>> f6b4cb67139a86dd735e08be148896f132a63a39
 }
 
 // Helper function encrypts data and returns ciphertext
