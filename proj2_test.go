@@ -103,10 +103,10 @@ func TestAppendPerfomance(t *testing.T) {
 
 func TestShareFile(t *testing.T) {
 	DebugPrint = true
-	bob, err := InitUser("bob", "barfu")
+	_, err := InitUser("bob", "barfu")
 	alice, _ := GetUser("alice", "fubar")
 	alice.StoreFile("toshare", []byte(""))
-	msgid, err := alice.ShareFile("toshare", "bob")
+	_, err = alice.ShareFile("toshare", "bob")
 	if err != nil {
 		debugMsg("sharing failed")
 	}
@@ -120,7 +120,7 @@ func TestReceiveFile(t *testing.T) {
 	msgid, err := alice.ShareFile("toshare", "bob")
 	err = bob.ReceiveFile("sharecare", "alice", msgid)
 	if err != nil {
-		debugMsg(err)
+		debugMsg(err.Error())
 	}
 	file, err := bob.LoadFile("sharecare")
 	debugMsg("file is: %s", file)
