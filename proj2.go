@@ -206,7 +206,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	merkleroot_name := randomBytes(userlib.HashSize)
 	block_names = append(block_names, datablock_name)
 	merkleroot := MerkleRoot{root, block_names}
-
 	if err := EncryptAndStore(merkleroot_name, file_hmac_key, file_encrypt_key, &merkleroot); err != nil {
 		panic("Merkle root was not stored. Datablock deleted")
 	}
@@ -271,6 +270,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //TODO: what is the format of the output data
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	data_blocks, err := LoadDataBlocks(filename, userdata)
+	
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
 	}
@@ -311,34 +311,23 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 		&header); err != nil {
 		panic("Unable to load Header file")
 	}
-	ciphertext, ok := userlib.DatastoreGet(string(header.MerkleRoot))
-	if !ok {
-		panic("Unable to load Merkle Root file")
-	}
-	encrypted_merkle, merkle_hmac := ciphertext[:len(ciphertext)-userlib.BlockSize], ciphertext[len(ciphertext)-userlib.BlockSize:]
-	if !VerifyHMAC(header.HMACKey, encrypted_merkle, merkle_hmac) {
-		panic("Encrypted merkle does not match HMAC")
-	}
-	plaintext := DecryptData(header.EncryptKey, encrypted_merkle)
-	var merkle []byte
-	err = json.Unmarshal(plaintext, &merkle)
-	if err != nil {
-		panic("Unable to load decrypted ciphertext")
-	}
 	recipient_key, ok := userlib.KeystoreGet(recipient)
-	rsaencrypted_merkle, err := userlib.RSAEncrypt(&recipient_key, merkle, make([]byte, 0))
+	if !ok {
+		panic("Unable to load recipient's key from keystore")
+	}
+	rsaencrypted_merkle, err := userlib.RSAEncrypt(&recipient_key, header.MerkleRoot, []byte(recipient))
 	if err != nil {
 		panic("Unable to encrypt merkle")
 	}
-	rsaencrypted_filekey, err := userlib.RSAEncrypt(&recipient_key, header.EncryptKey, make([]byte, 0))
+	rsaencrypted_filekey, err := userlib.RSAEncrypt(&recipient_key, header.EncryptKey, []byte(recipient))
 	if err != nil {
 		panic("Unable to encrypt file encryption key")
 	}
-	rsaencrypted_filehmac, err := userlib.RSAEncrypt(&recipient_key, header.HMACKey, make([]byte, 0))
+	rsaencrypted_filehmac, err := userlib.RSAEncrypt(&recipient_key, header.HMACKey, []byte(recipient))
 	if err != nil {
 		panic("Unable to encrypt file HMAC")
 	}
-	rsaencrypted_prev, err := userlib.RSAEncrypt(&recipient_key, header.PrevRoot, make([]byte, 0))
+	rsaencrypted_prev, err := userlib.RSAEncrypt(&recipient_key, header.PrevRoot, []byte(recipient))
 	if err != nil {
 		panic("Unable to encrypt previous root")
 	}
@@ -357,8 +346,11 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	msgbytes := randomBytes(16)
 	msgiduuid := bytesToUUID(msgbytes)
 	msgid = msgiduuid.String()
-	byteString := []byte(enc.String() + hmac.String() + merk.String() + prev.String() + bytesToUUID(record.RSASign).String())
-	userlib.DatastoreSet(msgid, byteString)
+	bytes, err := json.Marshal(record)
+	if err != nil {
+		panic("unable to marshal the data")
+	}
+	userlib.DatastoreSet(msgid, bytes)
 	return msgid, err
 }
 
@@ -370,41 +362,46 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 //still needs to use a verify HMAC
 func (userdata *User) ReceiveFile(filename string, sender string,
 	msgid string) error {
-	var header Header
+	var header Header; var sharing sharingRecord
 	ciphertext, err := userlib.DatastoreGet(msgid)
 	if !err {
 		panic("Unable to retrieve message")
 	}
 	header.Filename = filename
-	var share sharingRecord
-	err1 := json.Unmarshal(ciphertext, &share)
+	err1 := json.Unmarshal(ciphertext, &sharing)
 	if err1 != nil {
 		panic("Unable to load ciphertext")
 	}
+	
 	PublicKey, _ := userlib.KeystoreGet(sender)
-	enc, hmac, merk, prev := bytesToUUID(share.EncryptKey), bytesToUUID(share.HMACKey), bytesToUUID(share.MerkleRoot), bytesToUUID(share.PrevRoot)
+	enc, hmac, merk, prev := bytesToUUID(sharing.EncryptKey), bytesToUUID(sharing.HMACKey), bytesToUUID(sharing.MerkleRoot), bytesToUUID(sharing.PrevRoot)
 	rsastring := []byte(enc.String() + hmac.String() + merk.String() + prev.String())
-	err1 = userlib.RSAVerify(&PublicKey, rsastring, share.RSASign)
+
+	err1 = userlib.RSAVerify(&PublicKey, rsastring, sharing.RSASign)
+	
 	if err1 != nil {
 		panic("RSA signature not verified")
 	}
-	header.MerkleRoot, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, share.MerkleRoot, make([]byte, 0))
+	header.MerkleRoot, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.MerkleRoot, []byte(userdata.Username))
 	if err1 != nil {
 		panic("Unable to decrypt MerkleRoot")
 	}
-	header.HMACKey, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, share.HMACKey, make([]byte, 0))
+	header.HMACKey, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.HMACKey, []byte(userdata.Username))
 	if err1 != nil {
 		panic("Unable to decrypt HMACKey")
 	}
-	header.PrevRoot, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, share.PrevRoot, make([]byte, 0))
+	header.PrevRoot, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.PrevRoot, []byte(userdata.Username))
 	if err1 != nil {
 		panic("Unable to decrypt PrevRoot")
 	}
-	header.EncryptKey, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, share.EncryptKey, make([]byte, 0))
+	header.EncryptKey, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.EncryptKey, []byte(userdata.Username))
 	if err1 != nil {
 		panic("Unable to decrypt EncryptKey")
 	}
-	err1 = EncryptAndStore([]byte(filename), userdata.HMACKey, userdata.EncryptKey, &header)
+	err1 = EncryptAndStore([]byte(userdata.Username + userdata.Password + filename), userdata.HMACKey, userdata.EncryptKey, &header)
+	if err1 != nil {
+		panic("Unable to encrypt and store")
+	}
 	return err1
 }
 

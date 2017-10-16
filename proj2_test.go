@@ -85,22 +85,6 @@ func TestAppend(t *testing.T) {
 	debugMsg("Song Lyrics: %s", lyrics)
 }
 
-func TestAppendPerfomance(t *testing.T) {
-	DebugPrint = true
-	alice, _ := GetUser("alice", "fubar")
-	alice.StoreFile("append_performance", []byte(""))
-	repetitions := []uint{10, 100, 1000}
-	for _, v := range repetitions {
-		start := time.Now()
-		for i := uint(0); i < v; i++ {
-			alice.AppendFile("append_performance", []byte("foo"))
-		}
-		t := time.Now()
-		diff := t.Sub(start)
-		debugMsg("Time for %i repetitions: %i", v, diff.Seconds())
-	}
-}
-
 func TestShareFile(t *testing.T) {
 	DebugPrint = true
 	_, err := InitUser("bob", "barfu")
@@ -119,9 +103,11 @@ func TestReceiveFile(t *testing.T) {
 	alice.StoreFile("toshare", []byte("hello"))
 	msgid, err := alice.ShareFile("toshare", "bob")
 	err = bob.ReceiveFile("sharecare", "alice", msgid)
+	debugMsg("Bob has recieved")
 	if err != nil {
 		debugMsg(err.Error())
 	}
+	debugMsg("Bob is loading")
 	file, err := bob.LoadFile("sharecare")
 	debugMsg("file is: %s", file)
 }
@@ -137,4 +123,21 @@ func TestRevokeFile(t *testing.T) {
 	debugMsg(err.Error())
 	file, err := alice.LoadFile("toshare")
 	debugMsg("File is : %s", file)
+}
+
+
+func TestAppendPerfomance(t *testing.T) {
+	DebugPrint = true
+	alice, _ := GetUser("alice", "fubar")
+	alice.StoreFile("append_performance", []byte(""))
+	repetitions := []uint{10, 100, 1000}
+	for _, v := range repetitions {
+		start := time.Now()
+		for i := uint(0); i < v; i++ {
+			alice.AppendFile("append_performance", []byte("foo"))
+		}
+		t := time.Now()
+		diff := t.Sub(start)
+		debugMsg("Time for %i repetitions: %i", v, diff.Seconds())
+	}
 }
