@@ -284,6 +284,7 @@ type sharingRecord struct {
 	EncryptKey []byte
 	HMACKey []byte
 	PrevRoot []byte
+	RSASign []byte
 }
 
 
@@ -352,11 +353,15 @@ func (userdata *User) ShareFile(filename string, recipient string)(
 	record.HMACKey := rsaencrypted_filehmac
 	record.MerkleRoot := rsaencrypted_merkle
 	record.PrevRoot := rsaencrypted_merkle
-	HMACRecord := GenerateHMAC(header.HMACKey, record)
-	append(record, HMACRecord...) 
-	msgid := randomBytes(16)
-	err := userlib.DatastoreSet(msgid, record)
-	return msgid, err
+	RSARecord, err := userlib.RSASign(userdata.RSAPrivKey, record.EncryptKey || record.HMACKey || record.MerkleRoot || record.PrevRoot)
+	if err != nil {
+		panic("Unable to sign record")
+	}
+	record.RSASign = RSARecord
+	msgbytes := randomBytes(16)
+	msgid := bytesToUUID(msgbytes)
+	err := userlib.DatastoreSet(msgid.String(), record)
+	return msgid.String(), err
 }
 
 
@@ -378,6 +383,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	err := json.Unmarshal(ciphertext, &share)
 	if err != nil {
 		panic("Unable to load ciphertext")
+	}
+	err := userlib.RSAVerify(KeystoreGet(sender), share.EncryptKey || share.HMACKey || share.MerkleRoot || share.PrevRoot, share.RSASign)
+	if err != nil {
+		panic("RSA signature not verified")
 	}
 	header.MerkleRoot, err := userlib.RSADecrypt(userdata.RSAPrivKey, share.MerkleRoot, [])
 	if err != nil {
