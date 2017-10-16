@@ -415,7 +415,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
 	}
-	if err := VerifyMerkleRoot(data_blocks, header.MerkleRoot); err == false {
+	if err := VerifyMerkleRoot(data_blocks, header.PrevRoot); err == false {
 		panic("Merkle roots do not match")
 	}
 	data_blocks = nil
