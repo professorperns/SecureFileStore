@@ -409,27 +409,30 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
-	var header Header; var merkleRoot MerkleRoot
+	var header Header
+	var merkleRoot MerkleRoot
 	//Load all relevant data
 	if err := VerifyAndDecrypt(
 		[]byte(userdata.Username+userdata.Password+filename),
 		userdata.HMACKey,
 		userdata.EncryptKey,
 		&header); err != nil {
-		return  err
+		return err
 	}
 	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkleRoot); err != nil {
-		return  err
+		return err
 	}
-	
+
 	raw_data, err := LoadDataBlocks(filename, userdata)
+	var secure_filename []byte
 	for _, v := range merkleRoot.DataBlocks {
 		debugMsg("The filename you are deleting is: %s", v)
-		userlib.DatastoreDelete(string(v))
+		secure_filename = GenerateHMAC(header.HMACKey, []byte(v))
+		userlib.DatastoreDelete(string(secure_filename))
 	}
 	userlib.DatastoreDelete(string(header.MerkleRoot))
 	userdata.StoreFile(filename, raw_data[0])
-	for i := 1; i < len(raw_data); i++	 {
+	for i := 1; i < len(raw_data); i++ {
 		userdata.AppendFile(filename, raw_data[i])
 	}
 	return err
