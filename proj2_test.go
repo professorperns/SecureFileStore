@@ -98,6 +98,7 @@ func TestShareFile(t *testing.T) {
 
 func TestReceiveFile(t *testing.T) {
 	DebugPrint = true
+	bob, _ := GetUser("bob", "barfu")
 	alice, _ := GetUser("alice", "fubar")
 	alice.StoreFile("toshare", []byte("hello"))
 	msgid, err := alice.ShareFile("toshare", "bob")
@@ -114,6 +115,7 @@ func TestReceiveFile(t *testing.T) {
 func TestRevokeFile(t *testing.T) {
 	DebugPrint = true
 	alice, _ := GetUser("alice", "fubar")
+	bob, _ := GetUser("bob", "barfu")
 	alice.StoreFile("toshare", []byte("hello"))
 	msgid, err := alice.ShareFile("toshare", "bob")
 	err = alice.RevokeFile("toshare")
