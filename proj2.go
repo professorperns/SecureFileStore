@@ -408,15 +408,18 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
-	data_blocks, header, err := LoadDataBlocksHeader(filename, userdata)
-	var copy_data_blocks [][]byte
-	i := 0
-	for i < len(data_blocks) {
-		copy_data_blocks[i] = make([]byte, len(data_blocks[i]))
-		copy(copy_data_blocks[i], data_blocks[i])
-	}
+	data_blocks, err := LoadDataBlocks(filename, userdata)
+	copy_data_blocks := data_blocks
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
+	}
+	var header Header
+	if err := VerifyAndDecrypt(
+		[]byte(userdata.Username+userdata.Password+filename),
+		userdata.HMACKey,
+		userdata.EncryptKey,
+		&header); err != nil {
+		panic("Unable to load Header file")
 	}
 	if err := VerifyMerkleRoot(data_blocks, header.PrevRoot); err == false {
 		panic("Merkle roots do not match")
@@ -424,7 +427,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	data_blocks = nil
 	header = Header{}
 	userdata.StoreFile(filename, copy_data_blocks[0])
-	i = 1
+	i := 1
 	for i < len(copy_data_blocks) {
 		err := userdata.AppendFile(filename, copy_data_blocks[i])
 		if err != nil {
