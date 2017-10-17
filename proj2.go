@@ -411,12 +411,9 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	data_blocks, header, err := LoadDataBlocksHeader(filename, userdata)
 	var copy_data_blocks [][]byte
 	i := 0
-	j := 0
 	for i < len(data_blocks) {
-		j = 0
-		for j < len(data_blocks[i]) {
-			copy_data_blocks[i][j] = data_blocks[i][j]
-		}
+		copy_data_blocks[i] = make([]byte, len(data_blocks[i]))
+		copy(copy_data_blocks[i], data_blocks[i])
 	}
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
