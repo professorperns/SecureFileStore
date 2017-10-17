@@ -409,10 +409,14 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
 	data_blocks, header, err := LoadDataBlocksHeader(filename, userdata)
-	copy_data_blocks := data_blocks
+	var copy_data_blocks [][]byte
+	i := 0
 	j := 0
-	for j < len(copy_data_blocks) {
-		copy_data_blocks[j] = DecryptData(userdata.EncryptKey, copy_data_blocks[j])
+	for i < len(data_blocks) {
+		j = 0
+		for j < len(data_blocks[i]) {
+			copy_data_blocks[i][j] = data_blocks[i][j]
+		}
 	}
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
@@ -423,7 +427,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	data_blocks = nil
 	header = Header{}
 	userdata.StoreFile(filename, copy_data_blocks[0])
-	i := 1
+	i = 1
 	for i < len(copy_data_blocks) {
 		err := userdata.AppendFile(filename, copy_data_blocks[i])
 		if err != nil {
