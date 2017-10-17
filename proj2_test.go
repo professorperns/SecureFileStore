@@ -119,9 +119,13 @@ func TestRevokeFile(t *testing.T) {
 	alice.StoreFile("toshare", []byte("hello"))
 	msgid, err := alice.ShareFile("toshare", "bob")
 	err = alice.RevokeFile("toshare")
-	debugMsg(err.Error())
+	if err != nil {
+		debugMsg(err.Error())
+	}
 	err = bob.ReceiveFile("toshare", "alice", msgid)
-	debugMsg(err.Error())
+	if err != nil {
+		debugMsg(err.Error())
+	}
 	file, err := alice.LoadFile("toshare")
 	debugMsg("File is : %s", file)
 }
