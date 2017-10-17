@@ -123,7 +123,11 @@ func TestRevokeFile(t *testing.T) {
 		debugMsg(err.Error())
 	}
 	err = bob.ReceiveFile("toshare", "alice", msgid)
-	debugMsg(err.Error())
+	if err != nil {
+		debugMsg(err.Error())
+	} else {
+		debugMsg("No error found when there should be one")
+	}
 	file, err := alice.LoadFile("toshare")
 	debugMsg("File is : %s", file)
 }
