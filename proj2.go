@@ -553,12 +553,14 @@ func LoadDataBlocks(filename string, userdata *User) (data_blocks [][]byte, err 
 		&header); err != nil {
 		return nil, err
 	}
+	if header.Filename != filename {
+		return nil, errors.New("Filename does not match search")
+	}
 	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkle_root); err != nil {
 		return nil, err
 	}
 	data_blocks = make([][]byte, 0)
 	for _, v := range merkle_root.DataBlocks {
-		debugMsg("This file name you are looking for is: %s", v)
 		if err = VerifyAndDecrypt(v, header.HMACKey, header.EncryptKey, &block); err != nil {
 			return nil, err
 		}
