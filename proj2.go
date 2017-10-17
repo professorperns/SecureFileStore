@@ -424,11 +424,11 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	}
 
 	raw_data, err := LoadDataBlocks(filename, userdata)
-	var secure_filename string
+	var secure_filename []byte
 	for _, v := range merkleRoot.DataBlocks {
 		debugMsg("The filename you are deleting is: %s", v)
 		secure_filename = GenerateHMAC(header.HMACKey, []byte(v))
-		userlib.DatastoreDelete(secure_filename)
+		userlib.DatastoreDelete(string(secure_filename))
 	}
 	userlib.DatastoreDelete(string(header.MerkleRoot))
 	userdata.StoreFile(filename, raw_data[0])
