@@ -270,7 +270,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //TODO: what is the format of the output data
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	data_blocks, err := LoadDataBlocks(filename, userdata)
-	
+
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
 	}
@@ -362,7 +362,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 //still needs to use a verify HMAC
 func (userdata *User) ReceiveFile(filename string, sender string,
 	msgid string) error {
-	var header Header; var sharing sharingRecord
+	var header Header
+	var sharing sharingRecord
 	ciphertext, err := userlib.DatastoreGet(msgid)
 	if !err {
 		panic("Unable to retrieve message")
@@ -372,13 +373,13 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	if err1 != nil {
 		panic("Unable to load ciphertext")
 	}
-	
+
 	PublicKey, _ := userlib.KeystoreGet(sender)
 	enc, hmac, merk, prev := bytesToUUID(sharing.EncryptKey), bytesToUUID(sharing.HMACKey), bytesToUUID(sharing.MerkleRoot), bytesToUUID(sharing.PrevRoot)
 	rsastring := []byte(enc.String() + hmac.String() + merk.String() + prev.String())
 
 	err1 = userlib.RSAVerify(&PublicKey, rsastring, sharing.RSASign)
-	
+
 	if err1 != nil {
 		panic("RSA signature not verified")
 	}
@@ -398,7 +399,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	if err1 != nil {
 		panic("Unable to decrypt EncryptKey")
 	}
-	err1 = EncryptAndStore([]byte(userdata.Username + userdata.Password + filename), userdata.HMACKey, userdata.EncryptKey, &header)
+	err1 = EncryptAndStore([]byte(userdata.Username+userdata.Password+filename), userdata.HMACKey, userdata.EncryptKey, &header)
 	if err1 != nil {
 		panic("Unable to encrypt and store")
 	}
@@ -409,6 +410,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 func (userdata *User) RevokeFile(filename string) (err error) {
 	data_blocks, header, err := LoadDataBlocksHeader(filename, userdata)
 	copy_data_blocks := data_blocks
+	j := 0
+	for j < len(copy_data_blocks) {
+		copy_data_blocks[j] = DecryptData(userdata.EncryptKey, copy_data_blocks[j])
+	}
 	if err != nil {
 		panic("Data was unable to be loaded in helper")
 	}
