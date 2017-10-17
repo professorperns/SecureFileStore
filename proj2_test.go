@@ -197,6 +197,7 @@ func TestAliceCanRevoke(t *testing.T) {
 		t.Error("Failed to load file", err.Error())
 	}
 	debugMsg("Bob's file is : %s", bob_file)
+	debugMsg("Note that if there is an error here, it is good, because Bob does not have access")
 
 }
 	
