@@ -185,16 +185,19 @@ func TestAliceCanRevoke(t *testing.T) {
 	if err != nil {
 		debugMsg("Unable to revoke file")
 	}
+	err = alice.AppendFile("toshare", []byte("Alice"))
 	alice_file, err = alice.LoadFile("toshare")
 	if err != nil {
 		t.Error("Failed to load file", err.Error())
 	}
 	debugMsg("Alice's file is : %s", alice_file)
+
 	bob_file, err = bob.LoadFile("toshare")
 	if err != nil {
 		t.Error("Failed to load file", err.Error())
 	}
 	debugMsg("Bob's file is : %s", bob_file)
+
 }
 	
 

@@ -521,18 +521,18 @@ func VerifyAndDecrypt(filename []byte, hmac_key []byte, encrypt_key []byte, v in
 	secure_filename := GenerateHMAC(hmac_key, []byte(filename))
 	ciphertext, success := userlib.DatastoreGet(string(secure_filename))
 	if success != true {
-		return errors.New("Unable to store the data")
+		return errors.New("Data does not exist")
 	}
 	encrypted_data, hmac := make([]byte, len(ciphertext)-userlib.HashSize), make([]byte, userlib.HashSize)
 	copy(encrypted_data, ciphertext[:len(ciphertext)-userlib.HashSize])
 	copy(hmac, ciphertext[len(ciphertext)-userlib.HashSize:])
 	if !VerifyHMAC(hmac_key, encrypted_data, hmac) {
-		return errors.New("HMAC does not correspond to the encrypted data")
+		return errors.New("IntegrityError")
 	}
 	plaintext := DecryptData(encrypt_key, encrypted_data)
 	err = json.Unmarshal(plaintext, v)
 	if err != nil {
-		return errors.New("Unable to unmarshall the decrypted plaintext")
+		return errors.New("IntegrityError")
 	}
 	return err
 }
@@ -566,7 +566,7 @@ func LoadDataBlocks(filename string, userdata *User) (data_blocks [][]byte, err 
 	copy(merkle_leaves, data_blocks)
 
 	if success := VerifyMerkleRoot(merkle_leaves, header.PrevRoot); success == false {
-		return nil, errors.New("Merkle roots do not match. File has been appended to or modified")
+		return data_blocks, errors.New("IntegrityError")
 	}
 	return data_blocks, err
 }
