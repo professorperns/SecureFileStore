@@ -29,7 +29,7 @@ func TestInit(t *testing.T) {
 
 func TestStorage(t *testing.T) {
 	// And some more tests, because
-	DebugPrint = true
+	DebugPrint = false
 	v, err := GetUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to reload user", err)
@@ -40,7 +40,7 @@ func TestStorage(t *testing.T) {
 
 func Test2(t *testing.T) {
 	// Having previously created a user "alice" with password "fubar"...
-	DebugPrint = true
+	DebugPrint = false
 	alice, _ := GetUser("alice", "fubar")
 	also_alice, _ := GetUser("alice", "fubar")
 	debugMsg("Done loading users")
@@ -53,7 +53,7 @@ func Test2(t *testing.T) {
 }
 
 func TestEncryption(t *testing.T) {
-	DebugPrint = true
+	DebugPrint = false
 	alice, _ := GetUser("alice", "fubar")
 	alice.StoreFile("foo", []byte("this message should not be the same"))
 	alice.StoreFile("bar", []byte("this message should not be the same"))
@@ -86,7 +86,7 @@ func TestAppend(t *testing.T) {
 }
 
 func TestShareFile(t *testing.T) {
-	DebugPrint = true
+	DebugPrint = false
 	_, err := InitUser("bob", "barfu")
 	alice, _ := GetUser("alice", "fubar")
 	alice.StoreFile("toshare", []byte(""))
@@ -97,7 +97,7 @@ func TestShareFile(t *testing.T) {
 }
 
 func TestReceiveFile(t *testing.T) {
-	DebugPrint = true
+	DebugPrint = false
 	bob, _ := GetUser("bob", "barfu")
 	alice, _ := GetUser("alice", "fubar")
 	alice.StoreFile("toshare", []byte("hello"))
@@ -109,27 +109,97 @@ func TestReceiveFile(t *testing.T) {
 	}
 	debugMsg("Bob is loading")
 	file, err := bob.LoadFile("sharecare")
-	debugMsg("file is: %s", file)
+	debugMsg("Bob's file is: %s", file)
+	debugMsg("Alice's file is: hello")
 }
 
-func TestRevokeFile(t *testing.T) {
-	DebugPrint = true
+func TestAliceRecievesChanges(t *testing.T) {
+	DebugPrint = false
 	alice, _ := GetUser("alice", "fubar")
 	bob, _ := GetUser("bob", "barfu")
 	alice.StoreFile("toshare", []byte("hello"))
 	msgid, err := alice.ShareFile("toshare", "bob")
-	err = alice.RevokeFile("toshare")
+	err = bob.ReceiveFile("toshare", "alice", msgid)
 	if err != nil {
 		debugMsg(err.Error())
 	}
-	err = bob.ReceiveFile("toshare", "alice", msgid)
-	debugMsg(err.Error())
 	file, err := alice.LoadFile("toshare")
-	debugMsg("File is : %s", file)
+	debugMsg("Alice's file is : %s", file)
+	file, err = bob.LoadFile("toshare")
+	debugMsg("Bob's file is : %s", file)
+	err =  bob.AppendFile("toshare", []byte(" Alice"))
+	debugMsg("Bob has appended")
+	file, err = alice.LoadFile("toshare")
+	debugMsg(err.Error())
 }
 
-func TestAppendPerfomance(t *testing.T) {
+func TestBobCanShare(t *testing.T) {
+	DebugPrint = false
+	alice, _ := GetUser("alice", "fubar")
+	bob, _ := GetUser("bob", "barfu")
+	_, err := InitUser("carol", "carfu")
+	carol, _ := GetUser("carol", "carfu")
+	alice.StoreFile("toshare", []byte("hello"))
+	alice_file, err := alice.LoadFile("toshare")
+	if err != nil {
+		t.Error("Failed to load file", err.Error())
+	}
+	debugMsg("Alice's file is : %s", alice_file)
+	msgid, err := alice.ShareFile("toshare", "bob")
+	err = bob.ReceiveFile("toshare", "alice", msgid)
+	if err != nil {
+		debugMsg(err.Error())
+	}
+	bob_file, err := bob.LoadFile("toshare")
+	debugMsg("Bob's file is : %s", bob_file)
+	msgid, err = bob.ShareFile("toshare", "carol")
+	err = carol.ReceiveFile("toshare", "bob", msgid)
+	if err != nil {
+		debugMsg(err.Error())
+	}
+	carol_file, err := carol.LoadFile("toshare")
+	if err != nil {
+		t.Error("Failed to load file", err.Error())
+	}
+	debugMsg("Carol's file is : %s", carol_file)
+}
+
+func TestAliceCanRevoke(t *testing.T) {
 	DebugPrint = true
+	alice, _ := GetUser("alice", "fubar")
+	bob, _ := GetUser("bob", "barfu")
+	alice.StoreFile("toshare", []byte("hello"))
+	alice_file, err := alice.LoadFile("toshare")
+	if err != nil {
+		t.Error("Failed to load file", err.Error())
+	}
+	debugMsg("Alice's file is : %s", alice_file)
+	msgid, err := alice.ShareFile("toshare", "bob")
+	err = bob.ReceiveFile("toshare", "alice", msgid)
+	if err != nil {
+		debugMsg(err.Error())
+	}
+	bob_file, err := bob.LoadFile("toshare")
+	debugMsg("Bob's file is : %s", bob_file)
+	err = alice.RevokeFile("toshare")
+	if err != nil {
+		debugMsg("Unable to revoke file")
+	}
+	alice_file, err = alice.LoadFile("toshare")
+	if err != nil {
+		t.Error("Failed to load file", err.Error())
+	}
+	debugMsg("Alice's file is : %s", alice_file)
+	bob_file, err = bob.LoadFile("toshare")
+	if err != nil {
+		t.Error("Failed to load file", err.Error())
+	}
+	debugMsg("Bob's file is : %s", bob_file)
+}
+	
+
+func TestAppendPerfomance(t *testing.T) {
+	DebugPrint = false
 	alice, _ := GetUser("alice", "fubar")
 	alice.StoreFile("append_performance", []byte(""))
 	repetitions := []uint{10, 100, 1000}

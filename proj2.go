@@ -162,14 +162,14 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	privkey, err := userlib.GenerateRSAKey()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	keys := userlib.PBKDF2Key([]byte(password), []byte(username), userlib.HashSize+userlib.AESKeySize)
 	hmac_key, encrypt_key := keys[0:userlib.HashSize], keys[userlib.HashSize:]
 	userdata = User{username, password, privkey, hmac_key, encrypt_key}
 	filename := username + password
 	if err := EncryptAndStore([]byte(filename), hmac_key, encrypt_key, &userdata); err != nil {
-		panic("Data was not able to be stored")
+		return nil, err
 	}
 	userlib.KeystoreSet(username, privkey.PublicKey)
 	return &userdata, err
@@ -185,7 +185,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	keys := userlib.PBKDF2Key([]byte(password), []byte(username), userlib.HashSize+userlib.AESKeySize)
 	hmac_key, encrypt_key := keys[0:userlib.HashSize], keys[userlib.HashSize:]
 	if err := VerifyAndDecrypt([]byte(username+password), hmac_key, encrypt_key, &userdata); err != nil {
-		panic("Unable to load user struct file")
+		return nil, errors.New("Unable to decrypt and verify userdata")
 	}
 	return &userdata, err
 }
@@ -206,6 +206,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	merkleroot_name := randomBytes(userlib.HashSize)
 	block_names = append(block_names, datablock_name)
 	merkleroot := MerkleRoot{root, block_names}
+	debugMsg("The filename is: %s", block_names[0])
 	if err := EncryptAndStore(merkleroot_name, file_hmac_key, file_encrypt_key, &merkleroot); err != nil {
 		panic("Merkle root was not stored. Datablock deleted")
 	}
@@ -230,14 +231,14 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	var data_block DataBlock
 	header_name := []byte(userdata.Username + userdata.Password + filename)
 	if err := VerifyAndDecrypt(header_name, userdata.HMACKey, userdata.EncryptKey, &header); err != nil {
-		panic("Unable to load Header file")
+		return err
 	}
 	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkleroot); err != nil {
-		panic("Unable to load Merkle file file")
+		return err
 	}
 	data_blocks, err := LoadDataBlocks(filename, userdata)
 	if err != nil {
-		panic("Datablocks unable to be loaded")
+		return err
 	}
 
 	datablock_name := randomBytes(userlib.HashSize)
@@ -249,15 +250,15 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	merkleroot = MerkleRoot{new_root, append(merkleroot.DataBlocks, datablock_name)}
 
 	if err := EncryptAndStore(datablock_name, header.HMACKey, header.EncryptKey, &data_block); err != nil {
-		panic("Data was not stored")
+		return err
 	}
 	if err := EncryptAndStore(merkleroot_name, header.HMACKey, header.EncryptKey, &merkleroot); err != nil {
-		panic("Merkle root was not stored")
+		return err
 	}
 	header = Header{filename, merkleroot_name, header.EncryptKey, header.HMACKey, new_root}
 	header_name = []byte(userdata.Username + userdata.Password + filename)
 	if err := EncryptAndStore(header_name, userdata.HMACKey, userdata.EncryptKey, &header); err != nil {
-		panic("Header was not stored")
+		return err
 	}
 	//TODO: add data to the files modularize EncrypteAndStore
 	return err
@@ -272,7 +273,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	data_blocks, err := LoadDataBlocks(filename, userdata)
 
 	if err != nil {
-		panic("Data was unable to be loaded in helper")
+		return nil, err
 	}
 	for _, v := range data_blocks {
 		data = append(data, v...)
@@ -309,27 +310,27 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 		userdata.HMACKey,
 		userdata.EncryptKey,
 		&header); err != nil {
-		panic("Unable to load Header file")
+		return "", err
 	}
 	recipient_key, ok := userlib.KeystoreGet(recipient)
 	if !ok {
-		panic("Unable to load recipient's key from keystore")
+		return "", err
 	}
 	rsaencrypted_merkle, err := userlib.RSAEncrypt(&recipient_key, header.MerkleRoot, []byte(recipient))
 	if err != nil {
-		panic("Unable to encrypt merkle")
+		return "", err
 	}
 	rsaencrypted_filekey, err := userlib.RSAEncrypt(&recipient_key, header.EncryptKey, []byte(recipient))
 	if err != nil {
-		panic("Unable to encrypt file encryption key")
+		return "", err
 	}
 	rsaencrypted_filehmac, err := userlib.RSAEncrypt(&recipient_key, header.HMACKey, []byte(recipient))
 	if err != nil {
-		panic("Unable to encrypt file HMAC")
+		return "", err
 	}
 	rsaencrypted_prev, err := userlib.RSAEncrypt(&recipient_key, header.PrevRoot, []byte(recipient))
 	if err != nil {
-		panic("Unable to encrypt previous root")
+		return "", err
 	}
 	var record sharingRecord
 	record.EncryptKey = rsaencrypted_filekey
@@ -340,7 +341,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	rsastring := []byte(enc.String() + hmac.String() + merk.String() + prev.String())
 	RSARecord, err := userlib.RSASign(userdata.RSAPrivKey, rsastring)
 	if err != nil {
-		panic("Unable to sign record")
+		return "", err
 	}
 	record.RSASign = RSARecord
 	msgbytes := randomBytes(16)
@@ -348,7 +349,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	msgid = msgiduuid.String()
 	bytes, err := json.Marshal(record)
 	if err != nil {
-		panic("unable to marshal the data")
+		return "", err
 	}
 	userlib.DatastoreSet(msgid, bytes)
 	return msgid, err
@@ -366,12 +367,12 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	var sharing sharingRecord
 	ciphertext, err := userlib.DatastoreGet(msgid)
 	if !err {
-		panic("Unable to retrieve message")
+		return errors.New("Unable to retrieve file from datastore")
 	}
 	header.Filename = filename
 	err1 := json.Unmarshal(ciphertext, &sharing)
 	if err1 != nil {
-		panic("Unable to load ciphertext")
+		return err1
 	}
 
 	PublicKey, _ := userlib.KeystoreGet(sender)
@@ -381,58 +382,55 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	err1 = userlib.RSAVerify(&PublicKey, rsastring, sharing.RSASign)
 
 	if err1 != nil {
-		panic("RSA signature not verified")
+		return err1
 	}
 	header.MerkleRoot, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.MerkleRoot, []byte(userdata.Username))
 	if err1 != nil {
-		panic("Unable to decrypt MerkleRoot")
+		return err1
 	}
 	header.HMACKey, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.HMACKey, []byte(userdata.Username))
 	if err1 != nil {
-		panic("Unable to decrypt HMACKey")
+		return err1
 	}
 	header.PrevRoot, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.PrevRoot, []byte(userdata.Username))
 	if err1 != nil {
-		panic("Unable to decrypt PrevRoot")
+		return err1
 	}
 	header.EncryptKey, err1 = userlib.RSADecrypt(userdata.RSAPrivKey, sharing.EncryptKey, []byte(userdata.Username))
 	if err1 != nil {
-		panic("Unable to decrypt EncryptKey")
+		return err1
 	}
 	err1 = EncryptAndStore([]byte(userdata.Username+userdata.Password+filename), userdata.HMACKey, userdata.EncryptKey, &header)
 	if err1 != nil {
-		panic("Unable to encrypt and store")
+		return err1
 	}
 	return err1
 }
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
-	data_blocks, header, err := LoadDataBlocksHeader(filename, userdata)
-	var copy_data_blocks [][]byte
-	i := 0
-	j := 0
-	for i < len(data_blocks) {
-		j = 0
-		for j < len(data_blocks[i]) {
-			copy_data_blocks[i][j] = data_blocks[i][j]
-		}
+	var header Header; var merkleRoot MerkleRoot
+	//Load all relevant data
+	if err := VerifyAndDecrypt(
+		[]byte(userdata.Username+userdata.Password+filename),
+		userdata.HMACKey,
+		userdata.EncryptKey,
+		&header); err != nil {
+		return  err
 	}
-	if err != nil {
-		panic("Data was unable to be loaded in helper")
+	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkleRoot); err != nil {
+		return  err
 	}
-	if err := VerifyMerkleRoot(data_blocks, header.PrevRoot); err == false {
-		panic("Merkle roots do not match")
+	
+	raw_data, err := LoadDataBlocks(filename, userdata)
+	for _, v := range merkleRoot.DataBlocks {
+		debugMsg("The filename you are deleting is: %s", v)
+		userlib.DatastoreDelete(string(v))
 	}
-	data_blocks = nil
-	header = Header{}
-	userdata.StoreFile(filename, copy_data_blocks[0])
-	i = 1
-	for i < len(copy_data_blocks) {
-		err := userdata.AppendFile(filename, copy_data_blocks[i])
-		if err != nil {
-			panic(err)
-		}
+	userlib.DatastoreDelete(string(header.MerkleRoot))
+	userdata.StoreFile(filename, raw_data[0])
+	for i := 1; i < len(raw_data); i++	 {
+		userdata.AppendFile(filename, raw_data[i])
 	}
 	return err
 }
@@ -443,7 +441,7 @@ func EncryptData(key []byte, plaintext []byte) []byte {
 	iv := ciphertext[:userlib.BlockSize]
 	// Load random data
 	if _, err := io.ReadFull(userlib.Reader, iv); err != nil {
-		panic(err)
+		return nil
 	}
 	cipher := userlib.CFBEncrypter(key, iv)
 	cipher.XORKeyStream(ciphertext[userlib.BlockSize:], []byte(plaintext))
@@ -507,7 +505,7 @@ func ComputeShaHash(data []byte) (scramble []byte) {
 func EncryptAndStore(filename []byte, hmac_key []byte, encrypt_key []byte, v interface{}) (err error) {
 	bytes, err := json.Marshal(v)
 	if err != nil {
-		panic("Data was not able to be marshalled")
+		return err
 	}
 	encrypted_data := EncryptData(encrypt_key, bytes)
 	hmac := GenerateHMAC(hmac_key, encrypted_data)
@@ -523,18 +521,18 @@ func VerifyAndDecrypt(filename []byte, hmac_key []byte, encrypt_key []byte, v in
 	secure_filename := GenerateHMAC(hmac_key, []byte(filename))
 	ciphertext, success := userlib.DatastoreGet(string(secure_filename))
 	if success != true {
-		panic("Error retrieving the file")
+		return errors.New("Unable to store the data")
 	}
 	encrypted_data, hmac := make([]byte, len(ciphertext)-userlib.HashSize), make([]byte, userlib.HashSize)
 	copy(encrypted_data, ciphertext[:len(ciphertext)-userlib.HashSize])
 	copy(hmac, ciphertext[len(ciphertext)-userlib.HashSize:])
 	if !VerifyHMAC(hmac_key, encrypted_data, hmac) {
-		panic("Encrypted text does not match HMAC")
+		return errors.New("HMAC does not correspond to the encrypted data")
 	}
 	plaintext := DecryptData(encrypt_key, encrypted_data)
 	err = json.Unmarshal(plaintext, v)
 	if err != nil {
-		panic("Unable to load decrypted ciphertext")
+		return errors.New("Unable to unmarshall the decrypted plaintext")
 	}
 	return err
 }
@@ -550,15 +548,16 @@ func LoadDataBlocks(filename string, userdata *User) (data_blocks [][]byte, err 
 		userdata.HMACKey,
 		userdata.EncryptKey,
 		&header); err != nil {
-		panic("Unable to load Header file")
+		return nil, err
 	}
 	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkle_root); err != nil {
-		panic("Unable to load Merkle Root file")
+		return nil, err
 	}
 	data_blocks = make([][]byte, 0)
 	for _, v := range merkle_root.DataBlocks {
+		debugMsg("This file name you are looking for is: %s", v)
 		if err = VerifyAndDecrypt(v, header.HMACKey, header.EncryptKey, &block); err != nil {
-			panic("Unable to load Merkle Root file")
+			return nil, err
 		}
 		data_blocks = append(data_blocks, block.Bytes)
 
@@ -567,45 +566,14 @@ func LoadDataBlocks(filename string, userdata *User) (data_blocks [][]byte, err 
 	copy(merkle_leaves, data_blocks)
 
 	if success := VerifyMerkleRoot(merkle_leaves, header.PrevRoot); success == false {
-		panic("Merkle roots are incorrect")
+		return nil, errors.New("Merkle roots do not match. File has been appended to or modified")
 	}
 	return data_blocks, err
 }
 
-func LoadDataBlocksHeader(filename string, userdata *User) (data_blocks [][]byte, header Header, err error) {
-	var merkle_root MerkleRoot
-	var block DataBlock
-
-	if err := VerifyAndDecrypt(
-		[]byte(userdata.Username+userdata.Password+filename),
-		userdata.HMACKey,
-		userdata.EncryptKey,
-		&header); err != nil {
-		panic("Unable to load Header file")
-	}
-	if err := VerifyAndDecrypt(header.MerkleRoot, header.HMACKey, header.EncryptKey, &merkle_root); err != nil {
-		panic("Unable to load Merkle Root file")
-	}
-	data_blocks = make([][]byte, 0)
-	for _, v := range merkle_root.DataBlocks {
-		if err = VerifyAndDecrypt(v, header.HMACKey, header.EncryptKey, &block); err != nil {
-			panic("Unable to load Merkle Root file")
-		}
-		data_blocks = append(data_blocks, block.Bytes)
-
-	}
-	merkle_leaves := make([][]byte, len(data_blocks))
-	copy(merkle_leaves, data_blocks)
-
-	if success := VerifyMerkleRoot(merkle_leaves, header.PrevRoot); success == false {
-		panic("Merkle roots are incorrect")
-	}
-	return data_blocks, header, err
-}
 func VerifyMerkleRoot(blocks [][]byte, prev []byte) bool {
 	new_root := ComputeMerkleRoot(blocks)
 	if !userlib.Equal(prev, new_root) {
-		panic("Merkle roots are incorrrect; changes were made to the file")
 		return false
 	}
 	return true
